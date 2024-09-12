@@ -36,6 +36,8 @@ Load< Scene > maze_scene(LoadTagDefault, []() -> Scene const * {
 	});
 });
 
+const glm::vec3 PlayMode::gravity= glm::vec3(0.0f, -8.0f, 0.0f);
+glm::vec3 player_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
 
 PlayMode::PlayMode() : scene(*maze_scene) {
     /*
@@ -56,25 +58,26 @@ PlayMode::PlayMode() : scene(*maze_scene) {
             maze = &transform;
         }else if (transform.name == "Sphere"){
             player = &transform;
+        }else if (transform.name == "Door"){
+            door = &transform;
         }else if (transform.name.find("Cube") != std::string::npos) {
             glm::vec3 wall;
             wall.x = -transform.position.y;
             wall.y = transform.position.z;
             wall.z = transform.position.x;
-            glm::vec3 size = glm::vec3(transform.scale.x / 2, transform.scale.y / 2, transform.scale.z / 2);
+            glm::vec3 size = glm::vec3(transform.scale.x, transform.scale.y, transform.scale.z);
 
             glm::vec3 min = wall - size;
             glm::vec3 max = wall + size;
 
             maze_walls.push_back(Wall{min, max});
-            //std::cout<< std::to_string(transform.scale.x) << "" << std::to_string(transform.scale.y)<<"\n";
         }
     }
    
     
     if (maze == nullptr) throw std::runtime_error("Maze not found.");
     if (player == nullptr) throw std::runtime_error("Player not found.");
-    //std::cout<< std::to_string(player->position.x) << "" << std::to_string(player->position.y)<<"\n";
+    if (door == nullptr) throw std::runtime_error("Door not found.");
 
 
 	//get pointer to camera for convenience:
@@ -86,16 +89,14 @@ PlayMode::PlayMode() : scene(*maze_scene) {
 PlayMode::~PlayMode() {
 }
 
-bool checkCollision(glm::vec3 playerPosition, float radius, glm::vec3 min, glm::vec3 max) {
+/*
+bool PlayMode::checkCollision(glm::vec3 playerPosition, float radius, glm::vec3 min, glm::vec3 max) {
     glm::vec3 closestPoint = glm::clamp(playerPosition, min, max);
-
-    // Calculate the distance between the closest point and the sphere center
     glm::vec3 difference = closestPoint - playerPosition;
     float distanceSquared = glm::dot(difference, difference);
-    //std::cout << std::to_string(distanceSquared) <<" "<<  std::to_string(radius*radius) << "\n";
     return distanceSquared <= (radius * radius);
 }
-
+ */
 
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
@@ -128,13 +129,9 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
             right.downs += 1;
             right.pressed = true;
             return true;
-        } else if (evt.key.keysym.sym == SDLK_UP) {
-            up.downs += 1;
-            up.pressed = true;
-            return true;
-        } else if (evt.key.keysym.sym == SDLK_DOWN) {
-            down.downs += 1;
-            down.pressed = true;
+        } else if (evt.key.keysym.sym == SDLK_SPACE) {
+            space.downs += 1;
+            space.pressed = true;
             return true;
         }
 	} else if (evt.type == SDL_KEYUP) {
@@ -156,13 +153,11 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
         } else if (evt.key.keysym.sym == SDLK_RIGHT) {
             right.pressed = false;
             return true;
-        } else if (evt.key.keysym.sym == SDLK_UP) {
-            up.pressed = false;
-            return true;
-        } else if (evt.key.keysym.sym == SDLK_DOWN) {
-            down.pressed = false;
+        }else if (evt.key.keysym.sym == SDLK_SPACE) {
+            space.pressed = false;
             return true;
         }
+        
 	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
 		if (SDL_GetRelativeMouseMode() == SDL_FALSE) {
 			SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -209,31 +204,88 @@ void PlayMode::update(float elapsed) {
 
 	//move camera:
 	{
+        //std::cout << "on_ground " << on_ground << "\n";
 
 		//combine inputs into a move:
         constexpr float PlayerSpeed = 2.0f;
-		glm::vec2 move = glm::vec2(0.0f);
-		if (A.pressed && !D.pressed) move.x =-1.0f;
-		if (!A.pressed && D.pressed) move.x = 1.0f;
-		if (S.pressed && !W.pressed) move.y =-1.0f;
-		if (!S.pressed && W.pressed) move.y = 1.0f;
+        constexpr float JumpSpeed = 7.0f;
         
-
+        //update player position
         glm::vec3 newPosition = player->position;
+        
+        if (!on_ground) {
+            player_velocity += gravity * elapsed;
+           
+        }
+        if (space.pressed && on_ground) {
+                player_velocity.y = JumpSpeed;
+                on_ground = false;
+        }
+        
+        newPosition += player_velocity * elapsed;
         if (left.pressed) newPosition.x -= PlayerSpeed * elapsed;
         if (right.pressed) newPosition.x += PlayerSpeed * elapsed;
-        if (down.pressed) newPosition.y -= PlayerSpeed * elapsed;
-        if (up.pressed) newPosition.y += PlayerSpeed * elapsed;
-        
-        
         //check for collisions
-        for (auto& wall : maze_walls) {
-            if(checkCollision(newPosition, player_radius, wall.min, wall.max)){
-                newPosition = player->position;
+        glm::vec3 player_min = newPosition - glm::vec3(player->scale.x, player->scale.y, player->scale.z);
+        glm::vec3 player_max = newPosition + glm::vec3(player->scale.x, player->scale.y, player->scale.z);
+        
+        glm::vec3 door_min = door->position - glm::vec3(door->scale.x, door->scale.y, door->scale.z);
+        glm::vec3 door_max = door->position + glm::vec3(door->scale.x, door->scale.y, door->scale.z);
+        
+        //check if player reaches the door from the left
+        if (player_max.x >= door_min.x && player_min.x <= door_max.x &&
+            player_max.y >= door_min.y && player_min.y <= door_max.y &&
+            player_max.z >= door_min.z && player_min.z <= door_max.z) {
+            float overlapX = std::min(player_max.x - door_min.x, door_max.x - player_min.x);
+            float overlapY = std::min(player_max.y - door_min.y, door_max.y - player_min.y);
+            float overlapZ = std::min(player_max.z - door_min.z, door_max.z - player_min.z);
+            if (overlapX < overlapY && overlapX < overlapZ) {
+                if (player_min.x < door_min.x) {
+                    game_win = true;
+                }
             }
         }
-        player->position = newPosition;
+        
+        if(!game_win){
+            on_ground = false;
+            for (auto& wall : maze_walls) {
+                if (player_max.x >= wall.min.x && player_min.x <= wall.max.x &&
+                    player_max.y >= wall.min.y && player_min.y <= wall.max.y &&
+                    player_max.z >= wall.min.z && player_min.z <= wall.max.z) {
+                    
+                   
+                    float overlapX = std::min(player_max.x - wall.min.x, wall.max.x - player_min.x);
+                    float overlapY = std::min(player_max.y - wall.min.y, wall.max.y - player_min.y);
+                    float overlapZ = std::min(player_max.z - wall.min.z, wall.max.z - player_min.z);
+                    
+                    
+                    if (overlapX < overlapY && overlapX < overlapZ) {
+                        //horizontal walls
+                        if (player_min.x < wall.min.x) {
+                            newPosition.x = wall.min.x - player->scale.x;
+                        } else {
+                            newPosition.x = wall.max.x + player->scale.x;
+                        }
+                    } else if (overlapY < overlapX && overlapY < overlapZ) {
+                        //vertical walls
+                        if (player_min.y < wall.min.y) {
+                            newPosition.y = wall.min.y - player->scale.y;
+                            player_velocity.y = 0.0f;
+                        } else {
+                            newPosition.y = wall.max.y + player->scale.y;
+                            on_ground = true;  // Player is on the ground
+                            player_velocity.y = 0.0f;
+                        }
+                    }
+                }
+                
+            }
 
+        }
+      
+        player->position = newPosition;
+        
+        /*
 		//make it so that moving diagonally doesn't go faster:
 		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
 
@@ -243,6 +295,7 @@ void PlayMode::update(float elapsed) {
 		glm::vec3 frame_forward = -frame[2];
 
 		camera->transform->position += move.x * frame_right + move.y * frame_forward;
+        */
 	}
 
 	//reset button press counters:
@@ -252,8 +305,7 @@ void PlayMode::update(float elapsed) {
 	S.downs = 0;
     left.downs = 0;
     right.downs = 0;
-    up.downs = 0;
-    down.downs = 0;
+    space.downs = 0;
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -288,16 +340,24 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			0.0f, 0.0f, 1.0f, 0.0f,
 			0.0f, 0.0f, 0.0f, 1.0f
 		));
-
-		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+        if(!game_win){
+            constexpr float H = 0.09f;
+            lines.draw_text("Arrow Key moves, Space jumps",
+                glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
+                glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+                glm::u8vec4(0x00, 0x00, 0x00, 0x00));
+            float ofs = 2.0f / drawable_size.y;
+            lines.draw_text("Arrow Key moves, Space jumps",
+                glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
+                glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+                glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+        }else{
+            constexpr float H = 0.09f;
+            float ofs = 2.0f / drawable_size.y;
+            lines.draw_text("You Won",
+                glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
+                glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+                glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+        }
 	}
 }

@@ -12,6 +12,7 @@ struct PlayMode : Mode {
 	virtual ~PlayMode();
 
 	//functions called by main loop:
+    bool checkCollision(glm::vec3 playerPosition, float radius, glm::vec3 min, glm::vec3 max);
 	virtual bool handle_event(SDL_Event const &, glm::uvec2 const &window_size) override;
 	virtual void update(float elapsed) override;
 	virtual void draw(glm::uvec2 const &drawable_size) override;
@@ -22,7 +23,7 @@ struct PlayMode : Mode {
 	struct Button {
 		uint8_t downs = 0;
 		uint8_t pressed = 0;
-	} left, right, down, up, W, S, A, D;
+	} left, right, space, W, S, A, D;
 
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
@@ -30,8 +31,7 @@ struct PlayMode : Mode {
 	//hexapod leg to wobble:
 	Scene::Transform *maze = nullptr;
 	Scene::Transform *player = nullptr;
-    
-    float player_radius = 0.3f;
+    Scene::Transform *door = nullptr;
     
     struct Wall {
         glm::vec3 min; //bottom-left corner
@@ -40,6 +40,13 @@ struct PlayMode : Mode {
 
     std::vector<Wall> maze_walls;
     
+    bool on_ground = true;
+    bool is_jumping = is_jumping = true;
+    
+    bool game_win = false;
+    
+    static const glm::vec3 gravity;
+    glm::vec3 ballVelocity;
 	
 	glm::quat hip_base_rotation;
 	glm::quat upper_leg_base_rotation;
