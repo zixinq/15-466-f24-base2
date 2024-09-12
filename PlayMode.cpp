@@ -43,6 +43,7 @@ PlayMode::PlayMode() : scene(*maze_scene) {
 	for (auto &transform : scene.transforms) {
 		if (transform.name == "Hip.FL") hip = &transform;
 	}
+     
     
 	if (hip == nullptr) throw std::runtime_error("Hip not found.");
 
@@ -50,14 +51,52 @@ PlayMode::PlayMode() : scene(*maze_scene) {
 	upper_leg_base_rotation = upper_leg->rotation;
 	lower_leg_base_rotation = lower_leg->rotation;
     */
+    for (auto& transform : scene.transforms) {
+        if (transform.name == "Maze") {
+            maze = &transform;
+        }else if (transform.name == "Sphere"){
+            player = &transform;
+        }else if (transform.name.find("Cube") != std::string::npos) {
+            glm::vec3 wall;
+            wall.x = -transform.position.y;
+            wall.y = transform.position.z;
+            wall.z = transform.position.x;
+            glm::vec3 size = glm::vec3(transform.scale.x / 2, transform.scale.y / 2, transform.scale.z / 2);
+
+            glm::vec3 min = wall - size;
+            glm::vec3 max = wall + size;
+
+            maze_walls.push_back(Wall{min, max});
+            //std::cout<< std::to_string(transform.scale.x) << "" << std::to_string(transform.scale.y)<<"\n";
+        }
+    }
+   
+    
+    if (maze == nullptr) throw std::runtime_error("Maze not found.");
+    if (player == nullptr) throw std::runtime_error("Player not found.");
+    //std::cout<< std::to_string(player->position.x) << "" << std::to_string(player->position.y)<<"\n";
+
 
 	//get pointer to camera for convenience:
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
 	camera = &scene.cameras.front();
+    
 }
 
 PlayMode::~PlayMode() {
 }
+
+bool checkCollision(glm::vec3 playerPosition, float radius, glm::vec3 min, glm::vec3 max) {
+    glm::vec3 closestPoint = glm::clamp(playerPosition, min, max);
+
+    // Calculate the distance between the closest point and the sphere center
+    glm::vec3 difference = closestPoint - playerPosition;
+    float distanceSquared = glm::dot(difference, difference);
+    //std::cout << std::to_string(distanceSquared) <<" "<<  std::to_string(radius*radius) << "\n";
+    return distanceSquared <= (radius * radius);
+}
+
+
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
 
@@ -66,36 +105,64 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			SDL_SetRelativeMouseMode(SDL_FALSE);
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_a) {
-			left.downs += 1;
-			left.pressed = true;
+			A.downs += 1;
+			A.pressed = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.downs += 1;
-			right.pressed = true;
+			D.downs += 1;
+			D.pressed = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.downs += 1;
-			up.pressed = true;
+			W.downs += 1;
+			W.pressed = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
+			S.downs += 1;
+			S.pressed = true;
 			return true;
-		}
+        } else if (evt.key.keysym.sym == SDLK_LEFT) {
+            left.downs += 1;
+            left.pressed = true;
+            return true;
+        } else if (evt.key.keysym.sym == SDLK_RIGHT) {
+            right.downs += 1;
+            right.pressed = true;
+            return true;
+        } else if (evt.key.keysym.sym == SDLK_UP) {
+            up.downs += 1;
+            up.pressed = true;
+            return true;
+        } else if (evt.key.keysym.sym == SDLK_DOWN) {
+            down.downs += 1;
+            down.pressed = true;
+            return true;
+        }
 	} else if (evt.type == SDL_KEYUP) {
 		if (evt.key.keysym.sym == SDLK_a) {
-			left.pressed = false;
+			A.pressed = false;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.pressed = false;
+			D.pressed = false;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.pressed = false;
+			W.pressed = false;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
+			S.pressed = false;
 			return true;
-		}
+		} else if (evt.key.keysym.sym == SDLK_LEFT) {
+            left.pressed = false;
+            return true;
+        } else if (evt.key.keysym.sym == SDLK_RIGHT) {
+            right.pressed = false;
+            return true;
+        } else if (evt.key.keysym.sym == SDLK_UP) {
+            up.pressed = false;
+            return true;
+        } else if (evt.key.keysym.sym == SDLK_DOWN) {
+            down.pressed = false;
+            return true;
+        }
 	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
 		if (SDL_GetRelativeMouseMode() == SDL_FALSE) {
 			SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -144,12 +211,28 @@ void PlayMode::update(float elapsed) {
 	{
 
 		//combine inputs into a move:
-		constexpr float PlayerSpeed = 30.0f;
+        constexpr float PlayerSpeed = 2.0f;
 		glm::vec2 move = glm::vec2(0.0f);
-		if (left.pressed && !right.pressed) move.x =-1.0f;
-		if (!left.pressed && right.pressed) move.x = 1.0f;
-		if (down.pressed && !up.pressed) move.y =-1.0f;
-		if (!down.pressed && up.pressed) move.y = 1.0f;
+		if (A.pressed && !D.pressed) move.x =-1.0f;
+		if (!A.pressed && D.pressed) move.x = 1.0f;
+		if (S.pressed && !W.pressed) move.y =-1.0f;
+		if (!S.pressed && W.pressed) move.y = 1.0f;
+        
+
+        glm::vec3 newPosition = player->position;
+        if (left.pressed) newPosition.x -= PlayerSpeed * elapsed;
+        if (right.pressed) newPosition.x += PlayerSpeed * elapsed;
+        if (down.pressed) newPosition.y -= PlayerSpeed * elapsed;
+        if (up.pressed) newPosition.y += PlayerSpeed * elapsed;
+        
+        
+        //check for collisions
+        for (auto& wall : maze_walls) {
+            if(checkCollision(newPosition, player_radius, wall.min, wall.max)){
+                newPosition = player->position;
+            }
+        }
+        player->position = newPosition;
 
 		//make it so that moving diagonally doesn't go faster:
 		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
@@ -163,10 +246,14 @@ void PlayMode::update(float elapsed) {
 	}
 
 	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
-	up.downs = 0;
-	down.downs = 0;
+	A.downs = 0;
+	D.downs = 0;
+	W.downs = 0;
+	S.downs = 0;
+    left.downs = 0;
+    right.downs = 0;
+    up.downs = 0;
+    down.downs = 0;
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -181,7 +268,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(1.0f, 1.0f, 0.95f)));
 	glUseProgram(0);
 
-	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+	glClearColor(0.8f, 0.5f, 0.5f, 1.0f);
 	glClearDepth(1.0f); //1.0 is actually the default value to clear the depth buffer to, but FYI you can change it.
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
