@@ -1,15 +1,15 @@
-# (TODO: your game's title)
+# (3D Maze)
 
-Author: (TODO: your name)
+Author: Zixin Qiu
 
-Design: (TODO: In two sentences or fewer, describe what is new and interesting about your game.)
+Design: This is a 3D maze game. You can control the ball in x and y directions and the ball is subject to gravity.
 
 Screen Shot:
 
-![Screen Shot](screenshot.png)
+![Screen Shot](3D Maze.png)
 
 How To Play:
 
-(TODO: describe the controls and (if needed) goals/strategy.)
+Move the ball with arrow keys left and right. Press Space to Jump. You win if you reach to the door at the bottom.
 
 This game was built with [NEST](NEST.md).
